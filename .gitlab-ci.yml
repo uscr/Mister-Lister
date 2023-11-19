@@ -37,4 +37,6 @@ deploy:
         --network=host 
         -e MISTER_LISTER_SQLITE_DB=$MISTER_LISTER_SQLITE_DB 
         -e MISTER_LISTER_TOKEN=$MISTER_LISTER_TOKEN 
-        --volume /opt/$CI_PROJECT_NAME:/data:rw --name $CI_PROJECT_NAME $IMAGE_TAG"
+        --volume /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro 
+        --volume /opt/$CI_PROJECT_NAME:/data:rw 
+        --name $CI_PROJECT_NAME $IMAGE_TAG"
