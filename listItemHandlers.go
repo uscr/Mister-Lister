@@ -61,17 +61,41 @@ func listItemsKeyboard(b *bot.Bot, list List) (*models.InlineKeyboardMarkup, err
 		kb.InlineKeyboard = append(kb.InlineKeyboard, make([]models.InlineKeyboardButton, 0))
 		kb.InlineKeyboard[lineCursor+1] = append(kb.InlineKeyboard[lineCursor], InlineKeyboardRow...)
 	}
-	kb.InlineKeyboard = append(kb.InlineKeyboard, []models.InlineKeyboardButton{{Text: "Вернуть удалённое", CallbackData: "UndoDeleteListElement"}})
+	kb.InlineKeyboard = append(kb.InlineKeyboard, []models.InlineKeyboardButton{
+		{Text: "F5", CallbackData: "redrawList"},
+		{Text: "Alt+Tab", CallbackData: "switchList"},
+		{Text: "Ctrl+Z", CallbackData: "undoDeleteListElement"},
+	})
 	return kb, nil
 }
 
 func drawListItemsHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	selectedList, err := getSelectedList(update.Message.Chat.ID)
 	if err != nil {
-		sendMessage(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Ошибка выбора активного списка"))
+		sendMessage(ctx, b, update.Message.Chat.ID, "Ошибка выбора активного списка")
 	}
 	kb, err := listItemsKeyboard(b, selectedList)
+	if err != nil {
+		sendMessage(ctx, b, update.Message.Chat.ID, "Ошибка формирования меню списка")
+	}
 	sendMarkupKeyboard(ctx, b, update.Message.Chat.ID, fmt.Sprintf("%s:", selectedList.Name), kb)
+}
+
+func listRedraw(ctx context.Context, b *bot.Bot, update *models.Update) {
+	answerCallback(ctx, b, update)
+	userId := update.CallbackQuery.Message.Chat.ID
+	buyList, err := getSelectedList(userId)
+	if err != nil {
+		sendMessage(ctx, b, userId, "Ошибка получения активного списка")
+		return
+	}
+	kb, err := listItemsKeyboard(b, buyList)
+	if err != nil {
+		sendMessage(ctx, b, userId, "Ошибка формирования меню списка")
+		return
+	}
+
+	sendMarkupKeyboard(ctx, b, userId, fmt.Sprintf("%s:", buyList.Name), kb)
 }
 
 func onListUndoDelete(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -86,13 +110,7 @@ func onListUndoDelete(ctx context.Context, b *bot.Bot, update *models.Update) {
 	var lastDeletedItem ListItem
 	db.Unscoped().Order("deleted_at desc").First(&lastDeletedItem, "user_id = ? AND list_id = ? AND deleted_at NOT NULL", userId, list.ID)
 	db.Unscoped().Model(&lastDeletedItem).Update("deleted_at", nil)
-	buyList, _ := getSelectedList(userId)
-	kb, err := listItemsKeyboard(b, buyList)
-	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка формирования меню списка")
-		return
-	}
-	sendMarkupKeyboard(ctx, b, userId, fmt.Sprintf("Список: %s", list.Name), kb)
+	listRedraw(ctx, b, update)
 }
 
 func onListElementClick(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -103,17 +121,10 @@ func onListElementClick(ctx context.Context, b *bot.Bot, update *models.Update) 
 	listId, _ := strconv.ParseInt(buttonData[1], 0, 64)
 	listElementId, _ := strconv.ParseInt(buttonData[2], 0, 64)
 	deleteListElement(userId, listId, listElementId)
-	buyList, err := getSelectedList(userId)
-	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка получения активного списка")
-		return
-	}
-	kb, err := listItemsKeyboard(b, buyList)
-	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка формирования меню списка")
-		return
-	}
+	listRedraw(ctx, b, update)
+}
 
-	sendMarkupKeyboard(ctx, b, userId, fmt.Sprintf("Список: %s", buyList.Name), kb)
-
+func listSwitch(ctx context.Context, b *bot.Bot, update *models.Update) {
+	answerCallback(ctx, b, update)
+	maskedSelectListHandler(ctx, b, update.CallbackQuery.Message.Chat.ID)
 }
