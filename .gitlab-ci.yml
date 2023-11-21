@@ -19,7 +19,31 @@ build and push:
     - docker build -t $IMAGE_TAG .
     - docker push $IMAGE_TAG
 
-deploy:
+deploy test:
+  stage: deploy
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - mkdir -p ~/.ssh
+    - eval $(ssh-agent -s)
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+  script:
+    - ssh-add <(echo "$TEST_SSH_PRIVATE_KEY")
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} "docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY"
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} "docker pull $IMAGE_TAG"
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} "docker stop TEST_${CI_PROJECT_NAME} || true"
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} "docker rm TEST_${CI_PROJECT_NAME} || true"
+    - >
+        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} "docker run -d --restart always 
+        --network=host 
+        -e MISTER_LISTER_SQLITE_DB=$MISTER_LISTER_SQLITE_DB 
+        -e MISTER_LISTER_TOKEN=$TEST_MISTER_LISTER_TOKEN 
+        --volume /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro 
+        --volume /opt/TEST_${CI_PROJECT_NAME}:/data:rw 
+        --name TEST_${CI_PROJECT_NAME} $IMAGE_TAG"
+  only:
+    - dev
+
+deploy prod:
   stage: deploy
   before_script:
     - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
@@ -40,3 +64,5 @@ deploy:
         --volume /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro 
         --volume /opt/$CI_PROJECT_NAME:/data:rw 
         --name $CI_PROJECT_NAME $IMAGE_TAG"
+  only:
+    - main
