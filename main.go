@@ -41,7 +41,9 @@ func main() {
 		// bot.WithDebug(),
 		bot.WithDefaultHandler(defaultHandler),
 		bot.WithCallbackQueryDataHandler("deleteListElement", bot.MatchTypePrefix, onListElementClick),
-		bot.WithCallbackQueryDataHandler("UndoDeleteListElement", bot.MatchTypePrefix, onListUndoDelete),
+		bot.WithCallbackQueryDataHandler("undoDeleteListElement", bot.MatchTypePrefix, onListUndoDelete),
+		bot.WithCallbackQueryDataHandler("redrawList", bot.MatchTypePrefix, listRedraw),
+		bot.WithCallbackQueryDataHandler("switchList", bot.MatchTypePrefix, listSwitch),
 	}
 
 	b, err := bot.New(os.Getenv("MISTER_LISTER_TOKEN"), opts...)
@@ -54,7 +56,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, helpHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/show", bot.MatchTypeExact, drawListItemsHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/share", bot.MatchTypePrefix, shareHandler)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/list", bot.MatchTypeExact, listHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/list", bot.MatchTypeExact, selectListHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/new", bot.MatchTypePrefix, newListHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/me", bot.MatchTypeExact, meHandler)
 	b.Start(ctx)
@@ -77,7 +79,9 @@ func helpHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 Расшарить список с указанным id
 
 /me
-Показать мой ID`)
+Показать мой ID
+
+Связаться с автором: @uscr0`)
 }
 
 func startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {

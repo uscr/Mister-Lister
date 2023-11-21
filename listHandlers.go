@@ -36,22 +36,29 @@ func onListSelect(ctx context.Context, b *bot.Bot, mes *models.Message, data []b
 	selectListByName(userId, listName)
 	selectedList, err := getSelectedList(userId)
 	if err != nil {
-		sendMessage(ctx, b, userId, fmt.Sprintf("Ошибка выбора активного списка"))
+		sendMessage(ctx, b, userId, "Ошибка выбора активного списка")
 	}
 	kb, err := listItemsKeyboard(b, selectedList)
+	if err != nil {
+		sendMessage(ctx, b, userId, "Ошибка выбора активного списка")
+	}
 	sendMarkupKeyboard(ctx, b, userId, fmt.Sprintf("Список %s:", selectedList.Name), kb)
 }
 
-func listHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	userId := update.Message.Chat.ID
+func selectListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	maskedSelectListHandler(ctx, b, update.Message.Chat.ID)
+}
+
+// Переиспользован в коллбеках, потому "masked"
+func maskedSelectListHandler(ctx context.Context, b *bot.Bot, userId int64) {
 	text := "/new *Название* : создать новый список"
-	sendMessage(ctx, b, update.Message.Chat.ID, text)
+	sendMessage(ctx, b, userId, text)
 	kb, err := listKeyboard(b, userId)
 	if err != nil {
 		sendMessage(ctx, b, userId, "Ошибка формирования меню списка")
 		return
 	}
-	sendInlineKeyboard(ctx, b, userId, fmt.Sprintf("Выберите список:"), kb)
+	sendInlineKeyboard(ctx, b, userId, "Выберите список:", kb)
 }
 
 func newListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -65,7 +72,7 @@ func newListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	name := strings.Join(words[1:], " ")
 
 	if err := createList(userId, name); err != nil {
-		errorLog.Printf("[listHandler] User %d. Error when create list: %s", userId, err)
+		errorLog.Printf("[newListHandler] User %d. Error when create list: %s", userId, err)
 		text = "Ошибка создания списка"
 	} else {
 		text = fmt.Sprintf("Создали %s и сделали его активным", name)

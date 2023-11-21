@@ -54,7 +54,6 @@ type ListItem struct {
 }
 
 func initDb() error {
-	fmt.Println(os.Getenv("MISTER_LISTER_SQLITE_DB"))
 	db, err := getDb()
 	if err != nil {
 		return err
