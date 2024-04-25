@@ -185,9 +185,3 @@ func answerCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
 		ShowAlert:       false,
 	})
 }
-
-// 2023/11/19 13:50:28 [TGBOT] [DEBUG] response from 'https://api.telegram.org/bot6674500517:AAEW8XfU4Utw7449BqrPoW48hr-oM3-W3CM/getUpdates' with payload '{"ok":true,"result":[{"update_id":33415153,
-// "message":{"message_id":1312,"from":
-// {"id":50590644,"is_bot":false,"first_name":"Denis","last_name":"Nazarov","username":"UsCr0","language_code":"ru","is_premium":true},
-// "chat":{"id":50590644,"first_name":"Denis","last_name":"Nazarov","username":"UsCr0","type":"private"},
-// "date":1700391028,"text":"/start","entities":[{"offset":0,"length":6,"type":"bot_command"}]}}]}'
