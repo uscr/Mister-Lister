@@ -1,4 +1,4 @@
-FROM golang:1.21 as builder
+FROM golang:1.21 AS builder
 WORKDIR /src
 COPY * .
 RUN go build -o /bin/misterlister -ldflags="-extldflags=-static"
