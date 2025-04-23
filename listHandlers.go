@@ -2,82 +2,149 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/go-telegram/ui/keyboard/inline"
+	"gorm.io/gorm"
 )
 
-func listKeyboard(b *bot.Bot, userId int64) (*inline.Keyboard, error) {
+func listKeyboard(ctx context.Context, b *bot.Bot, userID int64) (*models.InlineKeyboardMarkup, error) {
 	db, err := getDb()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
 
-	var listOwners []ListOwners
-	db.Where(&ListOwners{UserID: userId}).Find(&listOwners)
+	var owners []ListOwners
+	if err := db.WithContext(ctx).Where("user_id = ?", userID).Find(&owners).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch list owners for user %d: %w", userID, err)
+	}
 
-	kb := inline.New(b).Row()
-	for _, element := range listOwners {
+	if len(owners) == 0 {
+		return nil, fmt.Errorf("no lists available for user %d", userID)
+	}
+
+	kb := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
+	var row []models.InlineKeyboardButton
+
+	for _, owner := range owners {
 		var list List
-		db.First(&list, "id = ?", element.ListID)
-		kb.Button(list.Name, []byte(list.Name), onListSelect)
-		kb.Row()
+		if err := db.WithContext(ctx).First(&list, "id = ?", owner.ListID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			errorLog.Printf("Failed to fetch list %d for user %d: %v", owner.ListID, userID, err)
+			return nil, fmt.Errorf("failed to fetch list %d: %w", owner.ListID, err)
+		}
+		row = append(row, models.InlineKeyboardButton{
+			Text:         list.Name,
+			CallbackData: fmt.Sprintf("selectList_%s", list.Name),
+		})
+	}
+
+	if len(row) > 0 {
+		kb.InlineKeyboard = append(kb.InlineKeyboard, row)
+	} else {
+		return nil, fmt.Errorf("no valid lists found for user %d", userID)
 	}
 
 	return kb, nil
 }
 
-func onListSelect(ctx context.Context, b *bot.Bot, mes *models.Message, data []byte) {
-	userId := mes.Chat.ID
-	listName := string(data)
-	selectListByName(userId, listName)
-	selectedList, err := getSelectedList(userId)
-	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка выбора активного списка")
+func onListSelect(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if err := answerCallback(ctx, b, update); err != nil {
+		return
 	}
-	kb, err := listItemsKeyboard(b, selectedList)
+
+	userID, err := getUserID(update)
 	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка выбора активного списка")
+		errorLog.Printf("Failed to get user ID: %v", err)
+		return
 	}
-	sendMarkupKeyboard(ctx, b, userId, fmt.Sprintf("Список %s:", selectedList.Name), kb)
+
+	if update.CallbackQuery == nil {
+		sendMessage(ctx, b, userID, ErrInvalidCallback)
+		return
+	}
+
+	parts := strings.Split(update.CallbackQuery.Data, "_")
+	if len(parts) != 2 {
+		sendMessage(ctx, b, userID, ErrInvalidCallback)
+		return
+	}
+
+	listName := parts[1]
+	if err := selectListByName(ctx, userID, listName); err != nil {
+		errorLog.Printf("Failed to select list '%s' for user %d: %v", listName, userID, err)
+		sendMessage(ctx, b, userID, ErrSelectList)
+		return
+	}
+
+	list, err := getSelectedList(ctx, userID)
+	if err != nil {
+		errorLog.Printf("Failed to get selected list for user %d: %v", userID, err)
+		sendMessage(ctx, b, userID, ErrNoActiveList)
+		return
+	}
+
+	kb, err := listItemsKeyboard(ctx, b, list, userID)
+	if err != nil {
+		errorLog.Printf("Failed to create keyboard for list %d, user %d: %v", list.ID, userID, err)
+		sendMessage(ctx, b, userID, ErrCreateMenu)
+		return
+	}
+
+	sendInlineKeyboard(ctx, b, userID, fmt.Sprintf("%s:", list.Name), kb)
 }
 
 func selectListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	maskedSelectListHandler(ctx, b, update.Message.Chat.ID)
-}
-
-// Переиспользован в коллбеках, потому "masked"
-func maskedSelectListHandler(ctx context.Context, b *bot.Bot, userId int64) {
-	text := "/new *Название* : создать новый список"
-	sendMessage(ctx, b, userId, text)
-	kb, err := listKeyboard(b, userId)
+	userID, err := getUserID(update)
 	if err != nil {
-		sendMessage(ctx, b, userId, "Ошибка формирования меню списка")
+		errorLog.Printf("Failed to get user ID: %v", err)
 		return
 	}
-	sendInlineKeyboard(ctx, b, userId, "Выберите список:", kb)
+
+	maskedSelectListHandler(ctx, b, userID)
+}
+
+func maskedSelectListHandler(ctx context.Context, b *bot.Bot, userID int64) {
+	kb, err := listKeyboard(ctx, b, userID)
+	if err != nil {
+		errorLog.Printf("Failed to create list keyboard for user %d: %v", userID, err)
+		sendMessage(ctx, b, userID, "Нет доступных списков. Создайте новый с помощью /new <название>")
+		return
+	}
+
+	sendInlineKeyboard(ctx, b, userID, MsgSelectList, kb)
+	sendMessage(ctx, b, userID, MsgCreateNewList)
 }
 
 func newListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	var text string
-	userId := update.Message.Chat.ID
+	userID, err := getUserID(update)
+	if err != nil {
+		errorLog.Printf("Failed to get user ID: %v", err)
+		return
+	}
+
+	if update.Message == nil {
+		sendMessage(ctx, b, userID, ErrInvalidCallback)
+		return
+	}
+
 	words := strings.Fields(update.Message.Text)
 	if len(words) < 2 {
 		helpHandler(ctx, b, update)
 		return
 	}
-	name := strings.Join(words[1:], " ")
 
-	if err := createList(userId, name); err != nil {
-		errorLog.Printf("[newListHandler] User %d. Error when create list: %s", userId, err)
-		text = "Ошибка создания списка"
-	} else {
-		text = fmt.Sprintf("Создали %s и сделали его активным", name)
+	name := strings.Join(words[1:], " ")
+	if err := createList(ctx, userID, name); err != nil {
+		errorLog.Printf("Failed to create list '%s' for user %d: %v", name, userID, err)
+		sendMessage(ctx, b, userID, ErrCreateList)
+		return
 	}
 
-	sendMessage(ctx, b, userId, text)
-
+	sendMessage(ctx, b, userID, fmt.Sprintf(MsgListCreated, name))
 }
