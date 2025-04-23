@@ -29,17 +29,18 @@ build and push:
     - ssh-add <(echo "$KEY")
     - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY"
     - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker pull $IMAGE_TAG"
-    - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker stop $CONATAINER_NAME || true"
-    - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker rm $CONATAINER_NAME || true"
+    - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker stop $CONTAINER_NAME || true"
+    - ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker rm $CONTAINER_NAME || true"
     - >
         ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "docker run -d --restart always 
         --network=host 
         -e MISTER_LISTER_SQLITE_DB=$SQLITE_DB 
         -e MISTER_LISTER_TOKEN=$TOKEN 
+        -e MISTER_LISTER_WEBAPP_URL=$WEBAPP_URL_ADDRESS 
+        -e MISTER_LISTER_WEBAPP_PORT=$WEBAPP_PORT 
         --volume /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro 
         --volume $VOLUME:/data:rw 
-        --name $CONATAINER_NAME $IMAGE_TAG"
-
+        --name $CONTAINER_NAME $IMAGE_TAG"
 
 deploy test:
   stage: deploy
@@ -49,8 +50,10 @@ deploy test:
     SERVER: $TEST_DEPLOY_SERVER
     SQLITE_DB: $TEST_MISTER_LISTER_SQLITE_DB
     TOKEN: $TEST_MISTER_LISTER_TOKEN
+    WEBAPP_URL_ADDRESS: $TEST_WEBAPP_URL
+    WEBAPP_PORT: $TEST_HTTP_PORT
     VOLUME: /opt/TEST_${CI_PROJECT_NAME}
-    CONATAINER_NAME: TEST_${CI_PROJECT_NAME}
+    CONTAINER_NAME: TEST_${CI_PROJECT_NAME}
   <<: *deploy_script
   only:
     - dev
@@ -63,8 +66,10 @@ deploy prod:
     SERVER: $DEPLOY_SERVER
     SQLITE_DB: $MISTER_LISTER_SQLITE_DB
     TOKEN: $MISTER_LISTER_TOKEN
-    VOLUME: /opt/$CI_PROJECT_NAME
-    CONATAINER_NAME: $CI_PROJECT_NAME
+    WEBAPP_URL_ADDRESS: $WEBAPP_URL
+    WEBAPP_PORT: $HTTP_PORT
+    VOLUME: /opt/${CI_PROJECT_NAME}
+    CONTAINER_NAME: ${CI_PROJECT_NAME}
   <<: *deploy_script
   only:
     - main
